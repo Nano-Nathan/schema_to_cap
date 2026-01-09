@@ -1,0 +1,33 @@
+# Configuración de conexión a SAP HANA
+# Copia este archivo como 'hana_config.conf' y completa los valores
+
+# Host del servidor HANA
+# Hana Cockpit -> Instance -> Connections -> SQL Endpoint(without port)
+HANA_HOST=<HANA_HOST>
+
+# Puerto
+HANA_PORT=443
+
+# Nombre de la base de datos
+# Hana Cockpit -> Instance name
+HANA_DATABASE=<HANA_DATABASE>
+
+# Usuario
+# BTP Subaccount -> Service Instances -> <HDI Instance> -> Credentials -> user (RT_USER)
+HANA_USER=<HANA_USER>
+
+# Contraseña
+# BTP Subaccount -> Service Instances -> <HDI Instance> -> Credentials -> password (RT_USER_PASSWORD)
+HANA_PASSWORD=<HANA_PASSWORD>
+
+# Timeout para ejecución SQL en segundos (opcional)
+# None o vacío = sin timeout (recomendado para tablas grandes)
+# SQL_TIMEOUT=3600
+
+# Nombre del schema en el export.tar.gz (opcional, se auto-detecta si no se especifica)
+# El schema se detecta automáticamente desde la estructura index/SCHEMA_NAME/
+# SCHEMA=SCHEMA_NAME
+
+# Nombre del proyecto CAP (opcional, por defecto: cap_project)
+# El proyecto CAP debe estar al mismo nivel que schema_to_cap/
+# CAP_PROJECT_DIR=cap_project

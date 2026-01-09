@@ -1,0 +1,7 @@
+cap_projects/*
+data_insert_sql/*
+logs/*
+created/*
+temp_extract/*
+__pycache__/*
+hana_config.conf

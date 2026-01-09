@@ -1,0 +1,8 @@
+LSS-HASHES
+Hash: SHA256
+
+3ba710a14469854b9a0b97360ba94bb8989e9f9dd13becf253e37b50170032bd   PACKAGEDATA
+4d2910519c6ae23f8f9ee134b78f1d69ee80075f62c445fd310f9b3ce8af569f   files.lst
+e809d146061f97d2a231a284e454aabe4543fbd43591bbc3a77c9cf7e6ab726c   script.pm
+4118632fb40b27749e09149858d7a6dbbb05e15682b3e4e26bc845822a06cf01   ruby/activerecord/activerecord-hanaclient-adapter-2.26.26.gem
+777650357e8920c287499de754b7804131d05dac3b575b4fa70754623c5905ce   ruby/hanaclient/hanaclient-2.26.26-x86_64-linux.gem

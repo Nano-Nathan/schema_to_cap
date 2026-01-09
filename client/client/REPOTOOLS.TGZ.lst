@@ -1,0 +1,20 @@
+LSS-HASHES
+Hash: SHA256
+
+f824738e6d464499bd91bde0e9d1799ba5b82b945a4c4f8cb39ff21f412aa514   PACKAGEDATA
+2ae6af27a7635c70ba30f33528f168bc77e1bd771b62e13c5a5d920b66dead12   files.lst
+95ab20369f597dafb1c86476ca6efa0ef3e9349a3264bc316f21c6efbd89d536   script.pm
+362b4c9bb34b9a9fd899bdbbef878ae03719663578f0dae68555b273e61fe5a9   deprecated/rtt.sh
+3467dff736d7ffb11d77cb2b443adc0dfb17f194a6d49a0c45f74b936b4c1078   deprecated/rtt/Readme.txt
+2f951b9e7acbf653822352d14cf93616e01bd4cd78d3d3e14ed0615b20259fbf   deprecated/rtt/lib/json-rpc-1.0.jar
+37aff85248254be34891fc2018029d12dbf5d0a74c4096e6819aa29cd7cf04c3 X deprecated/rtt/lib/libsapjco3.so
+d0369ce5ad893ab7326a4539de18618aac01ccfcda64df850e62c3aa7a878435   deprecated/rtt/lib/rtt.jar
+b508577bfd86d2aeb7037f717af4bca5802a7389bb5976d134b245b01adb246b   deprecated/rtt/lib/sapjco3.jar
+ddf461d4186f8c8a5415bf791efff781b57c6bf69b51cf62f5320e7ee76417d0   deprecated/rtt/lib/tc_logging_java-1.0.0.jar
+569f8a4d49a5ded91f535c6da78012a49b5c774e74890246d60e78a8cc6167d8   deprecated/rtt/lib/tc_mlt_base-0.0.361795.jar
+0fe4bbc88f72becd3afa40899651ce3c6f851f65d630f57b5b0d7429ae6ca8c0   deprecated/rtt/lib/tc_mlt_tsapi-0.0.361016.jar
+5021fbb53170a2fffd1882bda4b3caf04db70e2d282d8d1b46bc7285771b3213   deprecated/rtt/lib/xliff_api-1.2.jar
+e7f9362570719571aeff9f8f35f7d3d9328edba22dcf821d32d6858dd13218bd   deprecated/rtt/lib/xliff_core-1.2.jar
+8d80eb7e1749162dddf30caa84e3658ee09397c9ce479be4a0f53495bec5288e   deprecated/rtt/lib/xliff_sapmetadata-1.2.jar
+77cfc269ecbe93b89a6fe2d1e35261d35d79d20277d027cffb6eab6dcd9913ee   deprecated/rtt/rtt.properties
+2fbfa5158f7b5f8ca44e9420bc37f984d90d3828ff7545abd1e20ff08bcf9d5b X regi

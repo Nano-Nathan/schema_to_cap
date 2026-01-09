@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+
+<!ELEMENT Installation (Variables?, Product, Parameters?, Environment?, CreateDirectories?, ReplaceInFiles?,
+                        ExecuteCommands?, P2Director?, Shortcuts?, ImportContent?,
+                        UninstallationEntry?, RunProgramAfterInstallation?, ExecuteCommandsAtActivation?, CustomModules?)>
+
+<!ELEMENT Variables (Variable*)>
+<!ELEMENT Variable (VarName, VarValue)>
+<!ELEMENT VarName (#PCDATA)>
+<!ELEMENT VarValue (#PCDATA)>
+
+<!ELEMENT Product (ProductKey, ProductName, ShortProductName, ProductVersion?, BuildString?, Copyright?, License?, InstallType?)>
+<!ELEMENT ProductKey (#PCDATA)>
+<!ELEMENT ProductName (#PCDATA)>
+<!ELEMENT ShortProductName (#PCDATA)>
+<!ELEMENT ProductVersion (#PCDATA)>
+<!ELEMENT BuildString (#PCDATA)>
+<!ELEMENT Copyright (#PCDATA)>
+<!ELEMENT License (#PCDATA)>
+<!ELEMENT InstallType (#PCDATA)>
+
+<!ELEMENT Parameters (ParamsWindows?, ParamsUNIX?)>
+<!ELEMENT ParamsWindows (Parameter*)>
+<!ELEMENT ParamsUNIX (Parameter*)>
+<!ELEMENT Parameter (ID, opt?, type, str?, value?, default, init_with_default?, 
+                     set_interactive?, mandatory?, required_disk_space?, console_omit_word_Enter?, skip_on_update?, update_file?, update_file_key?)>
+<!ATTLIST Parameter
+   uninstallation (1|0) #IMPLIED
+   installation (1|0) #IMPLIED
+   update (1|0) #IMPLIED>
+<!ELEMENT ID (#PCDATA)>
+<!ELEMENT opt (#PCDATA)>
+<!ELEMENT type (#PCDATA)>
+<!ELEMENT str (#PCDATA)>
+<!ELEMENT value (#PCDATA)>
+<!ELEMENT default (#PCDATA)>
+<!ELEMENT init_with_default (#PCDATA)>
+<!ELEMENT set_interactive (#PCDATA)>
+<!ELEMENT mandatory (#PCDATA)>
+<!ELEMENT required_disk_space (#PCDATA)>
+<!ELEMENT console_omit_word_Enter (#PCDATA)>
+<!ELEMENT skip_on_update (#PCDATA)>
+<!ELEMENT update_file (#PCDATA)>
+<!ELEMENT update_file_key (#PCDATA)>
+
+<!ELEMENT Environment (EnvWindows?, EnvUNIX?)>
+<!ELEMENT EnvWindows (EnvVariable*)>
+<!ELEMENT EnvUNIX (EnvVariable*)>
+<!ELEMENT EnvVariable (EnvVarName, EnvVarValue, EnvVarExtend, EnvVarSeparator?, EnvVarType?, SetForCurrentSession?)>
+<!ELEMENT EnvVarName (#PCDATA)>
+<!ELEMENT EnvVarValue (#PCDATA)>
+<!ELEMENT EnvVarExtend (#PCDATA)>
+<!ELEMENT EnvVarSeparator (#PCDATA)>
+<!ELEMENT EnvVarType (#PCDATA)>
+<!ELEMENT SetForCurrentSession (#PCDATA)>
+
+<!ELEMENT CreateDirectories (DirWindows?, DirUNIX?)>
+<!ELEMENT DirWindows (CreateDirectory*)>
+<!ELEMENT DirUNIX (CreateDirectory*)>
+<!ELEMENT CreateDirectory (DirPath)>
+<!ELEMENT DirPath (#PCDATA)>
+
+<!ELEMENT ReplaceInFiles (ReplaceWindows?, ReplaceUNIX?)>
+<!ELEMENT ReplaceWindows (ReplaceInFile*)>
+<!ELEMENT ReplaceUNIX (ReplaceInFile*)>
+<!ELEMENT ReplaceInFile (OldString, NewString)>
+<!ELEMENT OldString (#PCDATA)>
+<!ELEMENT NewString (#PCDATA)>
+
+<!ELEMENT ExecuteCommands (ExecWindows?, ExecUNIX?)>
+<!ELEMENT ExecWindows (ExecuteCommand*)>
+<!ELEMENT ExecUNIX (ExecuteCommand*)>
+<!ELEMENT ExecuteCommand (ExecCommand, ExecArg*, ExecDir?, ExecEnv*, ExecInputStream?, ExecRunAsAdmin?, WaitForCompletion?, ReturnCodeOK?, IgnoreError?)>
+<!ELEMENT ExecCommand (#PCDATA)>
+<!ELEMENT ExecArg (#PCDATA)>
+<!ELEMENT ExecDir (#PCDATA)>
+<!ELEMENT ExecEnv (ExecEnvVar, ExecEnvValue)>
+<!ELEMENT ExecEnvVar (#PCDATA)>
+<!ELEMENT ExecEnvValue (#PCDATA)>
+<!ELEMENT ExecInputStream (#PCDATA)>
+<!ELEMENT ExecRunAsAdmin (#PCDATA)>
+<!ELEMENT WaitForCompletion (#PCDATA)>
+<!ELEMENT ReturnCodeOK (#PCDATA)>
+<!ELEMENT IgnoreError (#PCDATA)>
+
+<!ELEMENT P2Director (Repository?, JavaVM?, InstUnit+)>
+<!ELEMENT Repository (#PCDATA)>
+<!ELEMENT JavaVM (#PCDATA)>
+<!ELEMENT InstUnit (#PCDATA)>
+
+<!ELEMENT Shortcuts (ScWindows?, ScUNIX?)>
+<!ELEMENT ScWindows (Shortcut*)>
+<!ELEMENT ScUNIX (Shortcut*)>
+<!ELEMENT Shortcut (ScName, ScPath, ScTarget, ScIcon?, ScType?, ScRunAsAdmin)>
+<!ELEMENT ScName (#PCDATA)>
+<!ELEMENT ScPath (#PCDATA)>
+<!ELEMENT ScTarget (#PCDATA)>
+<!ELEMENT ScIcon (#PCDATA)>
+<!ELEMENT ScType (#PCDATA)>
+<!ELEMENT ScRunAsAdmin (#PCDATA)>
+
+<!ELEMENT ImportContent (ImportWindows?, ImportUNIX?)>
+<!ELEMENT ImportWindows (#PCDATA)>
+<!ELEMENT ImportUNIX (#PCDATA)>
+
+<!ELEMENT UninstallationEntry (UninstWindows?, UninstUNIX?)>
+<!ELEMENT UninstWindows (UninstKey, UninstName, UninstVersion, UninstIcon?, UninstSizeKB?)>
+<!ELEMENT UninstUNIX (UninstKey, UninstName, UninstVersion, UninstIcon?, UninstSizeKB?, DirPath*, FilePath*)>
+<!ELEMENT UninstKey (#PCDATA)>
+<!ELEMENT UninstName (#PCDATA)>
+<!ELEMENT UninstVersion (#PCDATA)>
+<!ELEMENT UninstIcon (#PCDATA)>
+<!ELEMENT UninstSizeKB (#PCDATA)>
+<!ELEMENT FilePath (#PCDATA)>
+
+<!ELEMENT RunProgramAfterInstallation (RunWindows?, RunUNIX?)>
+<!ELEMENT RunWindows (ExecuteCommand)>
+<!ELEMENT RunUNIX (ExecuteCommand)>
+
+<!ELEMENT ExecuteCommandsAtActivation (ExecAtActivationWindows?, ExecAtActivationUNIX?)>
+<!ELEMENT ExecAtActivationWindows (ExecuteCommand*)>
+<!ELEMENT ExecAtActivationUNIX (ExecuteCommand*)>
+
+<!ELEMENT CustomModules (EventHandler*, Configuration*)>
+<!ELEMENT EventHandler (#PCDATA)>
+<!ATTLIST EventHandler
+   uninstallation (1|0) #IMPLIED
+   installation (1|0) #IMPLIED
+   update (1|0) #IMPLIED>
+<!ELEMENT Configuration (#PCDATA)>
+<!ATTLIST Configuration
+   uninstallation (1|0) #IMPLIED
+   installation (1|0) #IMPLIED
+   update (1|0) #IMPLIED>
