@@ -31,3 +31,7 @@ HANA_PASSWORD=<HANA_PASSWORD>
 # Nombre del proyecto CAP (opcional, por defecto: cap_project)
 # El proyecto CAP debe estar al mismo nivel que schema_to_cap/
 # CAP_PROJECT_DIR=cap_project
+
+# Ruta al cliente HANA (hdbsql) - REQUERIDO
+# En caso de no encontrarse el binario, intentará buscarlo en este path
+# HANA_CLIENT_PATH=/home/user/.hana-client/hdbsql

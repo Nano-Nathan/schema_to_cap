@@ -41,6 +41,28 @@ def detect_schema_from_extracted(extract_dir):
     return None
 
 
+def load_config_file(script_dir=None):
+    """
+    Carga la configuración desde hana_config.conf
+    Retorna un diccionario con todas las configuraciones
+    """
+    if script_dir is None:
+        script_dir = Path(__file__).parent
+    
+    config = {}
+    config_file = script_dir / "hana_config.conf"
+    
+    if config_file.exists():
+        with open(config_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    config[key.strip()] = value.strip().strip('"').strip("'")
+    
+    return config
+
+
 def get_schema_name(config=None, tar_path=None, extract_dir=None):
     """
     Obtiene el nombre del schema en este orden:
@@ -71,3 +93,27 @@ def get_schema_name(config=None, tar_path=None, extract_dir=None):
             return schema
     
     return None
+
+
+def get_cap_project_dir(script_dir=None):
+    """
+    Obtiene el nombre del directorio del proyecto CAP en este orden:
+    1. Variable de entorno CAP_PROJECT_DIR
+    2. Configuración en hana_config.conf (CAP_PROJECT_DIR)
+    3. Valor por defecto: cap_project
+    """
+    # 1. Variable de entorno
+    cap_dir = os.environ.get('CAP_PROJECT_DIR')
+    if cap_dir:
+        return cap_dir
+    
+    # 2. Configuración desde archivo
+    if script_dir is None:
+        script_dir = Path(__file__).parent
+    
+    config = load_config_file(script_dir)
+    if 'CAP_PROJECT_DIR' in config:
+        return config['CAP_PROJECT_DIR']
+    
+    # 3. Valor por defecto
+    return 'cap_project'

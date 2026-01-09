@@ -13,16 +13,6 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-try:
-    from hdbcli import dbapi
-except ImportError:
-    print("Error: hdbcli no está instalado.")
-    print("Instalándolo automáticamente...")
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "hdbcli", "--quiet"])
-    from hdbcli import dbapi
-
-
 class Colors:
     """Colores para output en terminal"""
     RED = '\033[0;31m'
@@ -75,6 +65,10 @@ def load_config():
     # Agregar configuraciones opcionales con valores por defecto
     if 'SQL_TIMEOUT' not in config:
         config['SQL_TIMEOUT'] = os.environ.get('SQL_TIMEOUT', None)  # None = sin timeout
+    
+    # Path al cliente HANA (opcional, se busca automáticamente si no se especifica)
+    if 'HANA_CLIENT_PATH' not in config:
+        config['HANA_CLIENT_PATH'] = os.environ.get('HANA_CLIENT_PATH', None)
     
     return config
 
@@ -260,35 +254,100 @@ def count_insert_statements(content):
     return count
 
 
-def show_progress_bar(current, total, bar_length=40):
-    """Muestra una barra de progreso simple"""
-    if total == 0:
-        return ''
-    percent = min(100, (current / total) * 100)
-    filled = int(bar_length * current / total)
-    bar = '█' * filled + '░' * (bar_length - filled)
-    return f"  [{bar}] {current:,}/{total:,} ({percent:.1f}%)"
+def show_progress(current_count, initial_count, total_inserts):
+    """Muestra el progreso de forma clara"""
+    if total_inserts == 0:
+        return f"  Progreso: {current_count:,} registros en tabla"
+    
+    inserted = current_count - initial_count
+    percent = min(100, (inserted / total_inserts * 100)) if total_inserts > 0 else 0
+    return f"  Progreso: {inserted:,}/{total_inserts:,} insertados ({percent:.1f}%)"
 
 
 def monitor_progress(hdbsql_path, config, schema, table_name, initial_count, total_inserts, stop_event):
     """Monitorea el progreso de inserción en un thread separado"""
-    last_inserted = 0
+    last_count = initial_count
+    update_interval = 0.5  # Actualizar cada medio segundo
+    
     while not stop_event.is_set():
-        time.sleep(1)  # Verificar cada segundo
-        current_count = count_table_records(hdbsql_path, config, schema, table_name)
-        if current_count is not None:
-            inserted = current_count - initial_count
-            if inserted != last_inserted and inserted >= 0:
-                progress = show_progress_bar(inserted, total_inserts)
-                print(f"\r{progress}", end='', flush=True)
-                last_inserted = inserted
-        time.sleep(0.5)  # Esperar medio segundo más
+        try:
+            current_count = count_table_records(hdbsql_path, config, schema, table_name)
+            if current_count is not None:
+                # Actualizar siempre que cambie el conteo
+                if current_count != last_count:
+                    progress = show_progress(current_count, initial_count, total_inserts)
+                    # Actualizar la línea de progreso en la parte inferior
+                    sys.stdout.write(f"\r{progress}")
+                    sys.stdout.flush()
+                    last_count = current_count
+            # Esperar antes de la siguiente verificación
+            if stop_event.wait(timeout=update_interval):
+                break
+        except Exception:
+            # Si hay error al contar, continuar intentando
+            if stop_event.wait(timeout=1):
+                break
+    
+    # Mostrar progreso final (última actualización)
+    try:
+        final_count = count_table_records(hdbsql_path, config, schema, table_name)
+        if final_count is not None:
+            progress = show_progress(final_count, initial_count, total_inserts)
+            sys.stdout.write(f"\r{progress}\n")
+            sys.stdout.flush()
+        else:
+            # Si no se puede obtener el conteo final, al menos limpiar la línea
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+    except Exception:
+        # Si hay error, limpiar la línea
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
+
+def find_hdbsql_path(config=None):
+    """
+    Encuentra la ruta al binario hdbsql:
+    1. Primero intenta encontrar hdbsql en PATH del sistema
+    2. Si no está en PATH, usa HANA_CLIENT_PATH del config (obligatorio)
+    3. Si tampoco está configurado, retorna None
+    """
+    import os
+    import shutil
+    
+    # 1. Intentar encontrar en PATH del sistema
+    hdbsql_path = shutil.which('hdbsql')
+    if hdbsql_path:
+        return hdbsql_path
+    
+    # 2. Si no está en PATH, usar HANA_CLIENT_PATH del config (obligatorio)
+    if config and config.get('HANA_CLIENT_PATH'):
+        client_path = Path(config['HANA_CLIENT_PATH'])
+        if client_path.exists() and client_path.is_file():
+            return str(client_path)
+        # Si es un directorio, buscar hdbsql dentro
+        if client_path.is_dir():
+            hdbsql = client_path / "hdbsql"
+            if hdbsql.exists() and hdbsql.is_file():
+                return str(hdbsql)
+    
+    # 3. Intentar desde variable de entorno
+    env_path = os.environ.get('HANA_CLIENT_PATH')
+    if env_path:
+        client_path = Path(env_path)
+        if client_path.exists() and client_path.is_file():
+            return str(client_path)
+        if client_path.is_dir():
+            hdbsql = client_path / "hdbsql"
+            if hdbsql.exists() and hdbsql.is_file():
+                return str(hdbsql)
+    
+    return None
 
 
 def execute_sql_file(conn, sql_file_path, log_dir, config=None):
     """Ejecuta un archivo SQL y retorna el resultado"""
     import subprocess
-    import shutil
     import tempfile
     import os
     
@@ -296,15 +355,8 @@ def execute_sql_file(conn, sql_file_path, log_dir, config=None):
     error_log_path = log_dir / f"{filename}.err"
     output_log_path = log_dir / f"{filename}.out"
     
-    # Verificar si hdbsql está disponible
-    # Primero buscar en el PATH estándar
-    hdbsql_path = shutil.which('hdbsql')
-    
-    # Si no está en PATH, buscar en la instalación persistente
-    if not hdbsql_path:
-        persistent_hdbsql = Path(__file__).parent / "client" / "hana_client" / "hdbsql"
-        if persistent_hdbsql.exists() and persistent_hdbsql.is_file():
-            hdbsql_path = str(persistent_hdbsql)
+    # Encontrar hdbsql
+    hdbsql_path = find_hdbsql_path(config)
     
     if hdbsql_path and config:
         # Usar hdbsql (más confiable para HANA Cloud)
@@ -377,14 +429,19 @@ def execute_sql_file(conn, sql_file_path, log_dir, config=None):
             # Iniciar monitoreo de progreso en thread separado
             stop_event = threading.Event()
             progress_thread = None
-            if table_name and records_before is not None and total_inserts > 0:
+            if table_name and records_before is not None:
                 print(f"  {Colors.BLUE}Ejecutando INSERT statements...{Colors.NC}")
-                progress_thread = threading.Thread(
-                    target=monitor_progress,
-                    args=(hdbsql_path, config, schema, table_name, records_before, total_inserts, stop_event),
-                    daemon=True
-                )
-                progress_thread.start()
+                # Mostrar progreso inicial en nueva línea (parte inferior)
+                initial_progress = show_progress(records_before, records_before, total_inserts)
+                sys.stdout.write(initial_progress)
+                sys.stdout.flush()
+                if total_inserts > 0:
+                    progress_thread = threading.Thread(
+                        target=monitor_progress,
+                        args=(hdbsql_path, config, schema, table_name, records_before, total_inserts, stop_event),
+                        daemon=True
+                    )
+                    progress_thread.start()
             else:
                 print(f"  {Colors.BLUE}Ejecutando INSERT statements...{Colors.NC}")
             
@@ -404,9 +461,11 @@ def execute_sql_file(conn, sql_file_path, log_dir, config=None):
             if progress_thread:
                 stop_event.set()
                 progress_thread.join(timeout=2)
-                print()  # Nueva línea después de la barra de progreso
+                # Limpiar la línea de progreso si el thread no lo hizo
+                sys.stdout.write("\n")
+                sys.stdout.flush()
             
-            # Contar registros después de insertar
+            # Contar registros después de insertar (siempre, incluso si hubo errores)
             records_after = None
             if table_name and hdbsql_path and records_before is not None:
                 records_after = count_table_records(hdbsql_path, config, schema, table_name)
@@ -417,6 +476,8 @@ def execute_sql_file(conn, sql_file_path, log_dir, config=None):
                         print(f"  {Colors.GREEN}✓ Registros insertados: {inserted:,}{Colors.NC}")
                     elif inserted < 0:
                         print(f"  {Colors.YELLOW}⚠ Diferencia: {inserted:,} (posibles duplicados eliminados){Colors.NC}")
+                    elif inserted == 0 and total_inserts > 0:
+                        print(f"  {Colors.YELLOW}⚠ No se insertaron nuevos registros (posiblemente ya existían){Colors.NC}")
             
             # Guardar output
             with open(output_log_path, 'w', encoding='utf-8') as out_file:
@@ -624,28 +685,21 @@ def main():
             log_file.write_text("")
     
     # Verificar si usamos hdbsql primero (preferido para HANA Cloud)
-    import shutil
-    hdbsql_path = shutil.which('hdbsql')
+    hdbsql_path = find_hdbsql_path(config)
     
-    # Si no está en PATH, buscar en la instalación persistente (configurable, dentro de schema_to_cap)
+    # Si no se encuentra hdbsql, mostrar error claro
     if not hdbsql_path:
-        client_dir = os.environ.get('HANA_CLIENT_DIR', str(script_dir / "client" / "hana_client"))
-        persistent_hdbsql = Path(client_dir) / "hdbsql"
-        if persistent_hdbsql.exists() and persistent_hdbsql.is_file():
-            hdbsql_path = str(persistent_hdbsql)
+        print(f"{Colors.RED}Error: No se encontró el cliente HANA (hdbsql){Colors.NC}")
+        print(f"\n{Colors.YELLOW}El cliente HANA es requerido para ejecutar los scripts SQL.{Colors.NC}")
+        print(f"\n{Colors.BLUE}Opciones:{Colors.NC}")
+        print(f"  1. Agregar hdbsql al PATH del sistema")
+        print(f"  2. Configurar HANA_CLIENT_PATH en hana_config.conf apuntando al binario hdbsql")
+        sys.exit(1)
     
-    # Intentar conectar con hdbcli solo si hdbsql no está disponible (fallback)
+    print(f"{Colors.GREEN}✓ Usando hdbsql para ejecución: {hdbsql_path}{Colors.NC}\n")
+    
+    # No necesitamos hdbcli si tenemos hdbsql
     conn = None
-    if not hdbsql_path:
-        print(f"{Colors.BLUE}Conectando a SAP HANA (hdbcli)...{Colors.NC}")
-        conn = connect_to_hana(config)
-        if conn:
-            print(f"{Colors.GREEN}✓ Conexión establecida (hdbcli){Colors.NC}\n")
-        else:
-            print(f"{Colors.RED}Error: No se pudo establecer conexión{Colors.NC}\n")
-            sys.exit(1)
-    else:
-        print(f"{Colors.GREEN}✓ Usando hdbsql para ejecución: {hdbsql_path}{Colors.NC}\n")
     
     # Contadores
     total_files = len(sql_files)

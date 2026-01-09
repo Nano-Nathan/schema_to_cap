@@ -5,7 +5,7 @@ Este proyecto proporciona herramientas para migrar la estructura y datos de una 
 ## 📋 Requisitos Previos
 
 - Python 3.7 o superior
-- Cliente SAP HANA (`hdbsql` o `hdbcli` Python)
+- **Cliente SAP HANA (`hdbsql`) - REQUERIDO** (ver Paso 3 para instalación)
 - Proyecto CAP inicializado con `schema.cds`
 - Archivo `export.tar.gz` exportado desde SAP HANA
 
@@ -22,7 +22,7 @@ proyecto/
     ├── temp_extract/                   # Archivos descomprimidos (se crea automáticamente)
     ├── logs/                           # Logs de ejecución (se crea automáticamente)
     ├── created/                        # SQL ejecutados (se crea automáticamente)
-    ├── client/                         # Cliente HANA (opcional)
+    ├── client/                         # Cliente HANA (requerido - ver instalación)
     ├── clone_cap_structure.py          # Script 1: Clona estructura a schema.cds
     ├── generate_sql_from_csv.py        # Script 2: Genera SQL INSERT desde CSV
     ├── execute_sql.py                  # Script 3: Ejecuta SQL en HANA
@@ -80,7 +80,27 @@ export.tar.gz
 cp export.tar.gz schema_to_cap/
 ```
 
-### Paso 3: Configurar Conexión HANA
+### Paso 3: Instalar Cliente HANA
+
+El cliente HANA (`hdbsql`) es **requerido** para ejecutar los scripts SQL. Instálalo en una de las siguientes ubicaciones:
+
+**Opción 1: Instalar en `/home/codespace/client/hana_client/` (Recomendado)**
+```bash
+# Descargar el instalador desde SAP
+# Ejecutar el instalador
+./hdbinst --path=/home/codespace/client/hana_client
+```
+
+**Opción 2: Instalar en `schema_to_cap/client/hana_client/`**
+```bash
+cd schema_to_cap
+./hdbinst --path=./client/hana_client
+```
+
+**Opción 3: Configurar ruta personalizada**
+Puedes instalar el cliente en cualquier ubicación y configurar la ruta en `hana_config.conf` (ver Paso 4).
+
+### Paso 4: Configurar Conexión HANA
 
 Copia el archivo de ejemplo y configura tus credenciales:
 
@@ -105,6 +125,10 @@ HANA_PASSWORD=tu_contraseña
 # SQL_TIMEOUT=3600
 # Nombre del schema en export.tar.gz (opcional, se auto-detecta)
 # SCHEMA=SCHEMA_NAME
+# Nombre del proyecto CAP (opcional, por defecto: cap_project)
+# CAP_PROJECT_DIR=cap_project
+# Ruta al cliente HANA (opcional, se busca automáticamente si no se especifica)
+# HANA_CLIENT_PATH=/home/codespace/client/hana_client/hdbsql
 ```
 
 ### Paso 4: Ejecutar los Scripts en Orden
@@ -202,8 +226,8 @@ export CREATED_DIR=created
 # Timeout para ejecución SQL en segundos (por defecto: None = sin timeout)
 export SQL_TIMEOUT=3600
 
-# Ruta al cliente HANA (por defecto: client/hana_client)
-export HANA_CLIENT_DIR=/ruta/al/cliente/hana
+# Ruta al cliente HANA (REQUERIDO - puede ser binario o directorio)
+export HANA_CLIENT_PATH=/home/codespace/client/hana_client/hdbsql
 ```
 
 ### Ejemplo de Uso con Variables de Entorno
@@ -305,7 +329,7 @@ rm -rf temp_extract/
 - `SQL_DIR`: Directorio de archivos SQL
 - `LOG_DIR`: Directorio de logs
 - `CREATED_DIR`: Directorio de archivos ejecutados
-- `HANA_CLIENT_DIR`: Ruta al cliente HANA
+- `HANA_CLIENT_PATH`: Ruta al binario hdbsql o directorio que lo contiene (REQUERIDO)
 - `SQL_TIMEOUT`: Timeout en segundos (None = sin timeout)
 
 **Funcionalidades:**

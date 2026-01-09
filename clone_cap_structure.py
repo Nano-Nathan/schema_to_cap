@@ -10,7 +10,7 @@ import tarfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from collections import OrderedDict
-from utils import get_schema_name
+from utils import get_schema_name, get_cap_project_dir
 
 
 class Colors:
@@ -280,7 +280,8 @@ def main():
     base_dir = Path(os.environ.get('PROJECT_BASE_DIR', script_dir.parent))
     # Rutas configurables
     tar_filename = os.environ.get('EXPORT_TAR_FILE', 'export.tar.gz')
-    cap_project_dir = os.environ.get('CAP_PROJECT_DIR', 'cap_project')
+    # Obtener nombre del proyecto CAP desde config o variable de entorno
+    cap_project_dir = get_cap_project_dir(script_dir)
     # El proyecto CAP está al mismo nivel que schema_to_cap
     schema_file = base_dir / cap_project_dir / "db" / "schema.cds"
     # Los archivos temporales y el tar.gz están en schema_to_cap
@@ -288,6 +289,8 @@ def main():
     tar_path = script_dir / tar_filename
     
     print(f"{Colors.YELLOW}=== Clonando estructura del export.tar.gz al proyecto CAP ==={Colors.NC}\n")
+    print(f"{Colors.BLUE}Proyecto CAP: {cap_project_dir}{Colors.NC}")
+    print(f"{Colors.BLUE}Ubicación del schema: {schema_file}{Colors.NC}\n")
     
     # Validar archivos
     if not tar_path.exists():
