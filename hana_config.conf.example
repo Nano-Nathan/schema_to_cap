@@ -1,6 +1,10 @@
 # Configuración de conexión a SAP HANA
 # Copia este archivo como 'hana_config.conf' y completa los valores
 
+# ============================================
+# CONFIGURACIÓN DE CONEXIÓN HANA (REQUERIDO)
+# ============================================
+
 # Host del servidor HANA
 # Hana Cockpit -> Instance -> Connections -> SQL Endpoint(without port)
 HANA_HOST=<HANA_HOST>
@@ -20,9 +24,22 @@ HANA_USER=<HANA_USER>
 # BTP Subaccount -> Service Instances -> <HDI Instance> -> Credentials -> password (RT_USER_PASSWORD)
 HANA_PASSWORD=<HANA_PASSWORD>
 
+# ============================================
+# CONFIGURACIÓN OPCIONAL DE HANA
+# ============================================
+
 # Timeout para ejecución SQL en segundos (opcional)
 # None o vacío = sin timeout (recomendado para tablas grandes)
 # SQL_TIMEOUT=3600
+
+# Ruta al cliente HANA (hdbsql) - OPCIONAL
+# En caso de no encontrarse el binario, intentará buscarlo en este path
+# Si no se especifica, se buscará automáticamente en ubicaciones comunes
+# HANA_CLIENT_PATH=/home/user/.hana-client/hdbsql
+
+# ============================================
+# CONFIGURACIÓN DE PROYECTO
+# ============================================
 
 # Nombre del schema en el export.tar.gz (opcional, se auto-detecta si no se especifica)
 # El schema se detecta automáticamente desde la estructura index/SCHEMA_NAME/
@@ -32,6 +49,25 @@ HANA_PASSWORD=<HANA_PASSWORD>
 # El proyecto CAP debe estar al mismo nivel que schema_to_cap/
 # CAP_PROJECT_DIR=cap_project
 
-# Ruta al cliente HANA (hdbsql) - REQUERIDO
-# En caso de no encontrarse el binario, intentará buscarlo en este path
-# HANA_CLIENT_PATH=/home/user/.hana-client/hdbsql
+# Directorio base del proyecto (opcional)
+# Por defecto: directorio padre de schema_to_cap
+# PROJECT_BASE_DIR=/ruta/al/proyecto
+
+# ============================================
+# CONFIGURACIÓN DE DIRECTORIOS
+# ============================================
+
+# Nombre del archivo export.tar.gz (opcional, por defecto: export.tar.gz)
+# EXPORT_TAR_FILE=export.tar.gz
+
+# Directorio de extracción temporal (opcional, por defecto: temp_extract)
+# EXTRACT_DIR=temp_extract
+
+# Directorio de salida SQL (opcional, por defecto: data_insert_sql)
+# SQL_DIR=data_insert_sql
+
+# Directorio de logs (opcional, por defecto: logs)
+# LOG_DIR=logs
+
+# Directorio de archivos ejecutados (opcional, por defecto: created)
+# CREATED_DIR=created

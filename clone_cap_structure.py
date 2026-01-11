@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from collections import OrderedDict
 from utils import get_schema_name, get_cap_project_dir
+from hana_connection import load_config, get_config_value
 
 
 class Colors:
@@ -273,19 +274,28 @@ def extract_files_from_tar(tar_path, extract_dir, schema_name):
 
 def main():
     """Función principal"""
-    import os
     # Directorio del script (schema_to_cap)
     script_dir = Path(__file__).parent
+    
+    # Cargar configuración (opcional para este script)
+    config = load_config(require_config=False, show_messages=False)
+    
     # Directorio base (padre de schema_to_cap, donde está cap_project)
-    base_dir = Path(os.environ.get('PROJECT_BASE_DIR', script_dir.parent))
+    base_dir_str = get_config_value(config, 'PROJECT_BASE_DIR', None)
+    if base_dir_str:
+        base_dir = Path(base_dir_str)
+    else:
+        base_dir = script_dir.parent
+    
     # Rutas configurables
-    tar_filename = os.environ.get('EXPORT_TAR_FILE', 'export.tar.gz')
+    tar_filename = get_config_value(config, 'EXPORT_TAR_FILE', 'export.tar.gz')
     # Obtener nombre del proyecto CAP desde config o variable de entorno
     cap_project_dir = get_cap_project_dir(script_dir)
     # El proyecto CAP está al mismo nivel que schema_to_cap
     schema_file = base_dir / cap_project_dir / "db" / "schema.cds"
     # Los archivos temporales y el tar.gz están en schema_to_cap
-    extract_dir = script_dir / os.environ.get('EXTRACT_DIR', 'temp_extract')
+    extract_dir_name = get_config_value(config, 'EXTRACT_DIR', 'temp_extract')
+    extract_dir = script_dir / extract_dir_name
     tar_path = script_dir / tar_filename
     
     print(f"{Colors.YELLOW}=== Clonando estructura del export.tar.gz al proyecto CAP ==={Colors.NC}\n")
@@ -301,7 +311,7 @@ def main():
     extract_dir.mkdir(exist_ok=True)
     
     # Obtener nombre del schema (auto-detectado o configurado)
-    schema_name = get_schema_name(tar_path=tar_path, extract_dir=extract_dir)
+    schema_name = get_schema_name(config=config, tar_path=tar_path, extract_dir=extract_dir)
     if not schema_name:
         print(f"{Colors.RED}Error: No se pudo detectar el nombre del schema{Colors.NC}")
         print(f"{Colors.YELLOW}Configura SCHEMA en hana_config.conf o como variable de entorno{Colors.NC}")

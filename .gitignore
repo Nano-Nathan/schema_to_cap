@@ -6,3 +6,4 @@ temp_extract/*
 __pycache__/*
 hana_config.conf
 export.tar.gz
+hanaclient*.tar.gz

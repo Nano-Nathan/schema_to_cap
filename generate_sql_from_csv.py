@@ -13,7 +13,8 @@ import tempfile
 from pathlib import Path
 from io import StringIO
 from utils import get_schema_name
-from hana_connection import load_config, extract_schema_from_user, get_existing_records, find_hdbsql_path
+from hana_connection import load_config, extract_schema_from_user, get_config_value
+from hana_client import HanaClient, HanaClientError
 
 
 class Colors:
@@ -229,7 +230,7 @@ def generate_insert_statements(table_name, columns, csv_content, existing_record
     return '\n'.join(insert_statements), row_count, skipped_count
 
 
-def process_table(tar_path, table_path, output_dir, extract_dir, hdbsql_path=None, config=None, schema=None):
+def process_table(tar_path, table_path, output_dir, extract_dir, client=None, schema=None):
     """Procesa una tabla: lee CSV y genera SQL, filtrando registros existentes en HANA"""
     table_name = get_table_name_from_path(table_path)
     if not table_name:
@@ -260,26 +261,36 @@ def process_table(tar_path, table_path, output_dir, extract_dir, hdbsql_path=Non
         print(f"  {Colors.YELLOW}⚠ No se encontró data.csv para {table_name}{Colors.NC}")
         return None, 0, 0
     
-    # Obtener registros existentes en HANA si hay hdbsql y configuración
+    # Obtener registros existentes en HANA si hay cliente y schema
     existing_records = None
-    if hdbsql_path and config and schema:
+    if client and schema:
         try:
             print(f"  {Colors.BLUE}Consultando registros existentes en HANA...{Colors.NC}")
-            existing_records = get_existing_records(hdbsql_path, config, schema, table_name, columns)
+            # Usar el nombre completo de la tabla con prefijo DB_
+            table_full_name = f"DB_{table_name}"
+            records_list = client.get_table_records(schema, table_full_name, columns)
+            existing_records = set(records_list)
+            
             if existing_records and len(existing_records) > 0:
                 print(f"  {Colors.BLUE}  Encontrados {len(existing_records):,} registros existentes{Colors.NC}")
             else:
                 print(f"  {Colors.BLUE}  No hay registros existentes (tabla vacía o no existe){Colors.NC}")
                 # Si la tabla está vacía, usar conjunto vacío para que se generen todos los INSERT
                 existing_records = set()
-        except Exception as e:
+        except HanaClientError as e:
             error_msg = str(e)
             print(f"  {Colors.YELLOW}⚠ No se pudieron obtener registros existentes: {error_msg}{Colors.NC}")
             print(f"  {Colors.YELLOW}  Generando todos los INSERT statements{Colors.NC}")
             # Si hay error, no filtrar (generar todos los INSERT)
             existing_records = None
+        except Exception as e:
+            error_msg = str(e)
+            print(f"  {Colors.YELLOW}⚠ Error inesperado: {error_msg}{Colors.NC}")
+            print(f"  {Colors.YELLOW}  Generando todos los INSERT statements{Colors.NC}")
+            # Si hay error, no filtrar (generar todos los INSERT)
+            existing_records = None
     else:
-        # No hay hdbsql o configuración disponible, generar todos los INSERT
+        # No hay cliente o configuración disponible, generar todos los INSERT
         existing_records = None
     
     # Generar INSERT statements (filtrando existentes si hay conexión)
@@ -336,15 +347,17 @@ def extract_files_from_tar(tar_path, extract_dir, schema_name):
 
 def main():
     """Función principal"""
-    import os
     # Directorio del script (schema_to_cap)
     script_dir = Path(__file__).parent
-    # Directorio base (padre de schema_to_cap)
-    base_dir = Path(os.environ.get('PROJECT_BASE_DIR', script_dir.parent))
-    # Rutas configurables
-    tar_filename = os.environ.get('EXPORT_TAR_FILE', 'export.tar.gz')
-    sql_output_dir = os.environ.get('SQL_DIR', 'data_insert_sql')
-    extract_dir_name = os.environ.get('EXTRACT_DIR', 'temp_extract')
+    
+    # Cargar configuración (opcional para este script)
+    config = load_config(require_config=False, show_messages=True)
+    
+    # Obtener rutas configurables desde config o variables de entorno
+    tar_filename = get_config_value(config, 'EXPORT_TAR_FILE', 'export.tar.gz')
+    sql_output_dir = get_config_value(config, 'SQL_DIR', 'data_insert_sql')
+    extract_dir_name = get_config_value(config, 'EXTRACT_DIR', 'temp_extract')
+    
     # El tar.gz y archivos temporales están en schema_to_cap
     tar_path = script_dir / tar_filename
     output_dir = script_dir / sql_output_dir
@@ -365,7 +378,7 @@ def main():
     print()
     
     # Obtener nombre del schema (auto-detectado o configurado)
-    schema_name = get_schema_name(tar_path=tar_path, extract_dir=extract_dir)
+    schema_name = get_schema_name(config=config, tar_path=tar_path, extract_dir=extract_dir)
     if not schema_name:
         print(f"{Colors.RED}Error: No se pudo detectar el nombre del schema{Colors.NC}")
         print(f"{Colors.YELLOW}Configura SCHEMA en hana_config.conf o como variable de entorno{Colors.NC}")
@@ -382,22 +395,23 @@ def main():
     
     print(f"{Colors.BLUE}Encontradas {len(table_paths)} tablas para procesar{Colors.NC}\n")
     
-    # Intentar encontrar hdbsql y cargar configuración para filtrar registros existentes
-    hdbsql_path = None
+    # Intentar crear cliente HANA para filtrar registros existentes
+    client = None
     schema = None
-    config = load_config(require_config=False, show_messages=False)
     
     if config:
-        print(f"{Colors.BLUE}Buscando hdbsql para filtrar registros existentes...{Colors.NC}")
-        hdbsql_path = find_hdbsql_path(config)
-        if hdbsql_path:
-            # Extraer schema del usuario
-            schema = extract_schema_from_user(config['HANA_USER'])
-            print(f"{Colors.GREEN}✓ hdbsql encontrado: {hdbsql_path}{Colors.NC}")
+        try:
+            print(f"{Colors.BLUE}Buscando cliente HANA para filtrar registros existentes...{Colors.NC}")
+            client = HanaClient(config)
+            schema = client.get_schema()
+            print(f"{Colors.GREEN}✓ Cliente HANA inicializado: {client.hdbsql_path}{Colors.NC}")
             print(f"{Colors.GREEN}✓ Schema: {schema}{Colors.NC}")
             print(f"{Colors.BLUE}  Solo se generarán INSERT para registros nuevos{Colors.NC}\n")
-        else:
-            print(f"{Colors.YELLOW}⚠ No se encontró hdbsql{Colors.NC}")
+        except HanaClientError as e:
+            print(f"{Colors.YELLOW}⚠ No se pudo inicializar cliente HANA: {str(e)}{Colors.NC}")
+            print(f"{Colors.YELLOW}  Se generarán todos los INSERT statements{Colors.NC}\n")
+        except Exception as e:
+            print(f"{Colors.YELLOW}⚠ Error inesperado: {str(e)}{Colors.NC}")
             print(f"{Colors.YELLOW}  Se generarán todos los INSERT statements{Colors.NC}\n")
     else:
         print(f"{Colors.YELLOW}⚠ No se encontró configuración de HANA{Colors.NC}")
@@ -414,7 +428,7 @@ def main():
         print(f"{Colors.YELLOW}[{idx}/{len(table_paths)}] Procesando: {table_name}{Colors.NC}")
         
         try:
-            result = process_table(tar_path, table_path, output_dir, extract_dir, hdbsql_path, config, schema)
+            result = process_table(tar_path, table_path, output_dir, extract_dir, client, schema)
             if result is None:
                 error_count += 1
                 print(f"  {Colors.RED}✗ Error generando SQL{Colors.NC}")
