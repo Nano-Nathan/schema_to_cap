@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 from io import StringIO
 from utils import get_schema_name
+from hana_connection import load_config, extract_schema_from_user, get_existing_records, find_hdbsql_path
 
 
 class Colors:
@@ -138,8 +139,30 @@ def escape_sql_value(value):
     return f"'{str_value}'"
 
 
-def generate_insert_statements(table_name, columns, csv_content):
-    """Genera INSERT statements desde el contenido CSV"""
+
+
+
+
+def extract_primary_key_from_create_sql(create_sql_content):
+    """Extrae las columnas de la clave primaria del CREATE TABLE statement"""
+    # Buscar PRIMARY KEY (col1, col2, ...)
+    match = re.search(r'PRIMARY\s+KEY\s*\(([^)]+)\)', create_sql_content, re.IGNORECASE)
+    if not match:
+        return None
+    
+    pk_section = match.group(1)
+    # Extraer nombres de columnas (pueden estar entre comillas)
+    pk_columns = []
+    for col_match in re.finditer(r'["\']?([A-Z_$][A-Z0-9_$]*?)["\']?', pk_section, re.IGNORECASE):
+        col_name = col_match.group(1)
+        if col_name.upper() not in ['PRIMARY', 'KEY']:
+            pk_columns.append(col_name)
+    
+    return pk_columns if pk_columns else None
+
+
+def generate_insert_statements(table_name, columns, csv_content, existing_records=None):
+    """Genera INSERT statements desde el contenido CSV, filtrando registros que ya existen"""
     if not columns:
         return None
     
@@ -151,9 +174,19 @@ def generate_insert_statements(table_name, columns, csv_content):
     insert_statements.append(f"-- Script SQL generado automáticamente")
     insert_statements.append(f"-- Tabla: DB_{table_name}")
     insert_statements.append(f"-- Archivo CSV origen: {table_name}.csv")
+    if existing_records is not None and len(existing_records) > 0:
+        insert_statements.append(f"-- Filtrando registros existentes en HANA")
+    elif existing_records is not None:
+        insert_statements.append(f"-- Tabla verificada en HANA (vacía o no existe)")
     insert_statements.append("")
     
     row_count = 0
+    skipped_count = 0
+    
+    # Si no hay registros existentes, usar conjunto vacío
+    if existing_records is None:
+        existing_records = set()
+    
     for row in csv_reader:
         if not row:  # Saltar filas vacías
             continue
@@ -164,6 +197,17 @@ def generate_insert_statements(table_name, columns, csv_content):
         
         # Tomar solo los valores que corresponden a las columnas
         values = row[:len(columns)]
+        
+        # Normalizar valores para comparación (igual que en get_existing_records)
+        normalized_values = tuple(
+            str(val).strip() if val else '' 
+            for val in values
+        )
+        
+        # Verificar si el registro ya existe
+        if normalized_values in existing_records:
+            skipped_count += 1
+            continue
         
         # Crear la lista de valores escapados
         escaped_values = [escape_sql_value(val) for val in values]
@@ -177,14 +221,19 @@ def generate_insert_statements(table_name, columns, csv_content):
         insert_statements.append(insert_stmt)
         row_count += 1
     
-    return '\n'.join(insert_statements), row_count
+    # Agregar comentario con estadísticas
+    if skipped_count > 0:
+        insert_statements.insert(4, f"-- Registros omitidos (ya existen): {skipped_count:,}")
+        insert_statements.insert(5, "")
+    
+    return '\n'.join(insert_statements), row_count, skipped_count
 
 
-def process_table(tar_path, table_path, output_dir, extract_dir):
-    """Procesa una tabla: lee CSV y genera SQL"""
+def process_table(tar_path, table_path, output_dir, extract_dir, hdbsql_path=None, config=None, schema=None):
+    """Procesa una tabla: lee CSV y genera SQL, filtrando registros existentes en HANA"""
     table_name = get_table_name_from_path(table_path)
     if not table_name:
-        return None, 0
+        return None, 0, 0
     
     # Rutas de archivos
     csv_path = table_path
@@ -197,28 +246,54 @@ def process_table(tar_path, table_path, output_dir, extract_dir):
     
     if not create_sql_content:
         print(f"  {Colors.YELLOW}⚠ No se encontró create.sql para {table_name}{Colors.NC}")
-        return None, 0
+        return None, 0, 0
     
     # Extraer nombres de columnas
     columns = extract_column_names_from_create_sql(create_sql_content)
     if not columns:
         print(f"  {Colors.YELLOW}⚠ No se pudieron extraer columnas de {table_name}{Colors.NC}")
-        return None, 0
+        return None, 0, 0
     
     # Leer CSV (desde descomprimido o tar.gz)
     csv_content = read_csv_from_tar(tar_path, csv_path, extract_dir)
     if not csv_content:
         print(f"  {Colors.YELLOW}⚠ No se encontró data.csv para {table_name}{Colors.NC}")
-        return None, 0
+        return None, 0, 0
     
-    # Generar INSERT statements
-    sql_content, row_count = generate_insert_statements(table_name, columns, csv_content)
+    # Obtener registros existentes en HANA si hay hdbsql y configuración
+    existing_records = None
+    if hdbsql_path and config and schema:
+        try:
+            print(f"  {Colors.BLUE}Consultando registros existentes en HANA...{Colors.NC}")
+            existing_records = get_existing_records(hdbsql_path, config, schema, table_name, columns)
+            if existing_records and len(existing_records) > 0:
+                print(f"  {Colors.BLUE}  Encontrados {len(existing_records):,} registros existentes{Colors.NC}")
+            else:
+                print(f"  {Colors.BLUE}  No hay registros existentes (tabla vacía o no existe){Colors.NC}")
+                # Si la tabla está vacía, usar conjunto vacío para que se generen todos los INSERT
+                existing_records = set()
+        except Exception as e:
+            error_msg = str(e)
+            print(f"  {Colors.YELLOW}⚠ No se pudieron obtener registros existentes: {error_msg}{Colors.NC}")
+            print(f"  {Colors.YELLOW}  Generando todos los INSERT statements{Colors.NC}")
+            # Si hay error, no filtrar (generar todos los INSERT)
+            existing_records = None
+    else:
+        # No hay hdbsql o configuración disponible, generar todos los INSERT
+        existing_records = None
+    
+    # Generar INSERT statements (filtrando existentes si hay conexión)
+    result = generate_insert_statements(table_name, columns, csv_content, existing_records)
+    if result is None:
+        return None, 0, 0
+    
+    sql_content, row_count, skipped_count = result
     
     # Guardar archivo SQL
     output_file = output_dir / f"{table_name}.sql"
     output_file.write_text(sql_content, encoding='utf-8')
     
-    return output_file, row_count
+    return output_file, row_count, skipped_count
 
 
 def extract_files_from_tar(tar_path, extract_dir, schema_name):
@@ -307,27 +382,60 @@ def main():
     
     print(f"{Colors.BLUE}Encontradas {len(table_paths)} tablas para procesar{Colors.NC}\n")
     
+    # Intentar encontrar hdbsql y cargar configuración para filtrar registros existentes
+    hdbsql_path = None
+    schema = None
+    config = load_config(require_config=False, show_messages=False)
+    
+    if config:
+        print(f"{Colors.BLUE}Buscando hdbsql para filtrar registros existentes...{Colors.NC}")
+        hdbsql_path = find_hdbsql_path(config)
+        if hdbsql_path:
+            # Extraer schema del usuario
+            schema = extract_schema_from_user(config['HANA_USER'])
+            print(f"{Colors.GREEN}✓ hdbsql encontrado: {hdbsql_path}{Colors.NC}")
+            print(f"{Colors.GREEN}✓ Schema: {schema}{Colors.NC}")
+            print(f"{Colors.BLUE}  Solo se generarán INSERT para registros nuevos{Colors.NC}\n")
+        else:
+            print(f"{Colors.YELLOW}⚠ No se encontró hdbsql{Colors.NC}")
+            print(f"{Colors.YELLOW}  Se generarán todos los INSERT statements{Colors.NC}\n")
+    else:
+        print(f"{Colors.YELLOW}⚠ No se encontró configuración de HANA{Colors.NC}")
+        print(f"{Colors.YELLOW}  Se generarán todos los INSERT statements{Colors.NC}\n")
+    
     # Procesar cada tabla
     success_count = 0
     error_count = 0
     total_rows = 0
+    total_skipped = 0
     
     for idx, table_path in enumerate(sorted(table_paths), 1):
         table_name = get_table_name_from_path(table_path)
         print(f"{Colors.YELLOW}[{idx}/{len(table_paths)}] Procesando: {table_name}{Colors.NC}")
         
         try:
-            output_file, row_count = process_table(tar_path, table_path, output_dir, extract_dir)
-            if output_file:
-                success_count += 1
-                total_rows += row_count
-                print(f"  {Colors.GREEN}✓ Generado: {output_file.name} ({row_count:,} registros){Colors.NC}")
-            else:
+            result = process_table(tar_path, table_path, output_dir, extract_dir, hdbsql_path, config, schema)
+            if result is None:
                 error_count += 1
                 print(f"  {Colors.RED}✗ Error generando SQL{Colors.NC}")
+            else:
+                output_file, row_count, skipped_count = result
+                if output_file:
+                    success_count += 1
+                    total_rows += row_count
+                    total_skipped += skipped_count
+                    msg = f"  {Colors.GREEN}✓ Generado: {output_file.name} ({row_count:,} registros nuevos"
+                    if skipped_count > 0:
+                        msg += f", {skipped_count:,} omitidos"
+                    msg += f"){Colors.NC}"
+                    print(msg)
+                else:
+                    error_count += 1
+                    print(f"  {Colors.RED}✗ Error generando SQL{Colors.NC}")
         except Exception as e:
             error_count += 1
             print(f"  {Colors.RED}✗ Error: {str(e)}{Colors.NC}")
+    
     
     # Resumen
     print()
@@ -335,7 +443,9 @@ def main():
     print(f"Total de tablas: {len(table_paths)}")
     print(f"{Colors.GREEN}Exitosas: {success_count}{Colors.NC}")
     print(f"{Colors.RED}Con errores: {error_count}{Colors.NC}")
-    print(f"Total de registros: {total_rows:,}")
+    print(f"Total de registros nuevos: {total_rows:,}")
+    if total_skipped > 0:
+        print(f"Total de registros omitidos (ya existían): {total_skipped:,}")
     print()
     print(f"Archivos SQL generados en: {output_dir}/")
     print(f"\n{Colors.BLUE}Para ejecutar los SQL, usa:{Colors.NC}")

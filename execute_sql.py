@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script para ejecutar archivos SQL en SAP HANA usando hdbcli
+Script para ejecutar archivos SQL en SAP HANA usando hdbsql
 Uso: python3 execute_sql.py [archivo.sql]
 Si no se especifica archivo, ejecuta todos los archivos .sql del directorio
 """
@@ -12,6 +12,7 @@ import glob
 import threading
 from datetime import datetime
 from pathlib import Path
+from hana_connection import load_config, extract_schema_from_user, find_hdbsql_path
 
 class Colors:
     """Colores para output en terminal"""
@@ -20,164 +21,6 @@ class Colors:
     YELLOW = '\033[1;33m'
     BLUE = '\033[0;34m'
     NC = '\033[0m'  # No Color
-
-
-def load_config():
-    """Carga la configuración desde hana_config.conf o variables de entorno"""
-    import os
-    config = {}
-    
-    # Intentar cargar desde archivo de configuración en schema_to_cap
-    script_dir = Path(__file__).parent
-    config_file = script_dir / "hana_config.conf"
-    
-    if config_file.exists():
-        print(f"{Colors.BLUE}Usando configuración desde hana_config.conf{Colors.NC}")
-    else:
-        # Intentar desde variables de entorno
-        print(f"{Colors.BLUE}Intentando cargar desde variables de entorno...{Colors.NC}")
-        env_vars = ['HANA_HOST', 'HANA_PORT', 'HANA_DATABASE', 'HANA_USER', 'HANA_PASSWORD']
-        for var in env_vars:
-            value = os.environ.get(var)
-            if value:
-                config[var] = value
-        
-        if len(config) == len(env_vars):
-            return config
-        else:
-            print(f"{Colors.RED}Error: No se encontró el archivo hana_config.conf ni variables de entorno{Colors.NC}")
-            print("Por favor, crea el archivo de configuración primero.")
-            sys.exit(1)
-    
-    with open(config_file, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                key, value = line.split('=', 1)
-                config[key.strip()] = value.strip().strip('"').strip("'")
-    
-    required_keys = ['HANA_HOST', 'HANA_PORT', 'HANA_DATABASE', 'HANA_USER', 'HANA_PASSWORD']
-    for key in required_keys:
-        if key not in config:
-            print(f"{Colors.RED}Error: Falta la configuración {key} en {config_file}{Colors.NC}")
-            sys.exit(1)
-    
-    # Agregar configuraciones opcionales con valores por defecto
-    if 'SQL_TIMEOUT' not in config:
-        config['SQL_TIMEOUT'] = os.environ.get('SQL_TIMEOUT', None)  # None = sin timeout
-    
-    # Path al cliente HANA (opcional, se busca automáticamente si no se especifica)
-    if 'HANA_CLIENT_PATH' not in config:
-        config['HANA_CLIENT_PATH'] = os.environ.get('HANA_CLIENT_PATH', None)
-    
-    return config
-
-
-def connect_to_hana(config):
-    """Establece conexión con SAP HANA usando hdbsql o hdbcli"""
-    # Verificar si hdbsql está disponible
-    import shutil
-    hdbsql_path = shutil.which('hdbsql')
-    
-    if hdbsql_path:
-        # Usar hdbsql si está disponible (más confiable para HANA Cloud)
-        return None  # Retornar None indica que usaremos hdbsql directamente
-    
-    # Si no hay hdbsql, usar hdbcli
-    try:
-        port = int(config['HANA_PORT'])
-        
-        # Para SAP HANA Cloud con puerto 443, usar SSL con validación
-        if port == 443:
-            # Extraer schema del usuario si está disponible (formato: SCHEMA_USER)
-            user = config['HANA_USER']
-            schema = None
-            if '_' in user:
-                # El schema es la parte antes del último guión bajo
-                parts = user.rsplit('_', 1)
-                if len(parts) == 2:
-                    schema = parts[0]
-            
-            # Intentar con validación de certificado primero (recomendado para producción)
-            try:
-                conn_params = {
-                    'address': config['HANA_HOST'],
-                    'port': port,
-                    'user': user,
-                    'password': config['HANA_PASSWORD'],
-                    'encrypt': True,
-                    'sslValidateCertificate': True,
-                    'sslHostNameInCertificate': config['HANA_HOST']
-                }
-                
-                # Agregar databaseName solo si está especificado y no es vacío
-                if 'HANA_DATABASE' in config and config['HANA_DATABASE']:
-                    conn_params['databaseName'] = config['HANA_DATABASE']
-                
-                conn = dbapi.connect(**conn_params)
-                
-                # Si tenemos schema, establecerlo después de conectar
-                if schema:
-                    try:
-                        cursor = conn.cursor()
-                        cursor.execute(f'SET SCHEMA "{schema}"')
-                        cursor.close()
-                    except:
-                        pass  # Si falla, continuar sin schema
-                
-                return conn
-            except Exception as ssl_error:
-                # Si falla con validación, intentar sin validación (solo para desarrollo)
-                print(f"{Colors.YELLOW}Advertencia: Falló con validación SSL, intentando sin validación...{Colors.NC}")
-                conn_params = {
-                    'address': config['HANA_HOST'],
-                    'port': port,
-                    'user': user,
-                    'password': config['HANA_PASSWORD'],
-                    'encrypt': True,
-                    'sslValidateCertificate': False,
-                    'sslHostNameInCertificate': config['HANA_HOST']
-                }
-                
-                if 'HANA_DATABASE' in config and config['HANA_DATABASE']:
-                    conn_params['databaseName'] = config['HANA_DATABASE']
-                
-                conn = dbapi.connect(**conn_params)
-                
-                if schema:
-                    try:
-                        cursor = conn.cursor()
-                        cursor.execute(f'SET SCHEMA "{schema}"')
-                        cursor.close()
-                    except:
-                        pass
-                
-                return conn
-        else:
-            # Para conexiones normales (puerto 30015)
-            conn = dbapi.connect(
-                address=config['HANA_HOST'],
-                port=port,
-                databaseName=config.get('HANA_DATABASE', ''),
-                user=config['HANA_USER'],
-                password=config['HANA_PASSWORD']
-            )
-            return conn
-    except Exception as e:
-        error_msg = str(e)
-        print(f"{Colors.RED}Error al conectar con SAP HANA: {error_msg}{Colors.NC}")
-        print(f"\n{Colors.YELLOW}Posibles causas:{Colors.NC}")
-        print("  1. Problema de conectividad de red/firewall")
-        print("  2. Credenciales incorrectas")
-        print("  3. Servidor no accesible desde este entorno")
-        print("  4. Configuración SSL incorrecta")
-        print(f"\n{Colors.YELLOW}Verifica:{Colors.NC}")
-        print(f"  - Host: {config['HANA_HOST']}")
-        print(f"  - Puerto: {config['HANA_PORT']}")
-        print(f"  - Base de datos: {config['HANA_DATABASE']}")
-        print(f"  - Usuario: {config['HANA_USER']}")
-        print(f"\n{Colors.BLUE}Nota: El script está listo, pero necesita conectividad al servidor HANA.{Colors.NC}")
-        sys.exit(1)
 
 
 def get_table_name_from_sql(content, schema):
@@ -305,47 +148,7 @@ def monitor_progress(hdbsql_path, config, schema, table_name, initial_count, tot
         sys.stdout.flush()
 
 
-def find_hdbsql_path(config=None):
-    """
-    Encuentra la ruta al binario hdbsql:
-    1. Primero intenta encontrar hdbsql en PATH del sistema
-    2. Si no está en PATH, usa HANA_CLIENT_PATH del config (obligatorio)
-    3. Si tampoco está configurado, retorna None
-    """
-    import os
-    import shutil
-    
-    # 1. Intentar encontrar en PATH del sistema
-    hdbsql_path = shutil.which('hdbsql')
-    if hdbsql_path:
-        return hdbsql_path
-    
-    # 2. Si no está en PATH, usar HANA_CLIENT_PATH del config (obligatorio)
-    if config and config.get('HANA_CLIENT_PATH'):
-        client_path = Path(config['HANA_CLIENT_PATH'])
-        if client_path.exists() and client_path.is_file():
-            return str(client_path)
-        # Si es un directorio, buscar hdbsql dentro
-        if client_path.is_dir():
-            hdbsql = client_path / "hdbsql"
-            if hdbsql.exists() and hdbsql.is_file():
-                return str(hdbsql)
-    
-    # 3. Intentar desde variable de entorno
-    env_path = os.environ.get('HANA_CLIENT_PATH')
-    if env_path:
-        client_path = Path(env_path)
-        if client_path.exists() and client_path.is_file():
-            return str(client_path)
-        if client_path.is_dir():
-            hdbsql = client_path / "hdbsql"
-            if hdbsql.exists() and hdbsql.is_file():
-                return str(hdbsql)
-    
-    return None
-
-
-def execute_sql_file(conn, sql_file_path, log_dir, config=None):
+def execute_sql_file(sql_file_path, log_dir, config=None):
     """Ejecuta un archivo SQL y retorna el resultado"""
     import subprocess
     import tempfile
@@ -365,20 +168,7 @@ def execute_sql_file(conn, sql_file_path, log_dir, config=None):
             import re
             
             # Extraer schema del usuario
-            # El formato es: SCHEMA_XXXXX_RT, necesitamos solo SCHEMA
-            user = config['HANA_USER']
-            schema = None
-            if '_' in user:
-                # Dividir por _ y tomar todo excepto los últimos 2 segmentos
-                parts = user.split('_')
-                if len(parts) >= 3:
-                    # Formato: SCHEMA_XXXXX_RT -> tomar SCHEMA
-                    schema = '_'.join(parts[:-2])
-                elif len(parts) == 2:
-                    # Formato: SCHEMA_XXXXX -> tomar SCHEMA
-                    schema = parts[0]
-                else:
-                    schema = parts[0]
+            schema = extract_schema_from_user(config['HANA_USER'])
             
             # Leer contenido del archivo SQL original
             with open(sql_file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -544,72 +334,8 @@ def execute_sql_file(conn, sql_file_path, log_dir, config=None):
         except Exception as e:
             return {'success': False, 'error': f'Error ejecutando hdbsql: {str(e)}'}
     
-    # Usar hdbcli (fallback)
-    if conn is None:
-        return {'success': False, 'error': 'No hay conexión disponible'}
-    
-    cursor = conn.cursor()
-    
-    try:
-        # Leer el contenido del archivo SQL
-        with open(sql_file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            sql_content = f.read()
-        
-        if not sql_content.strip():
-            return {'success': False, 'error': 'Archivo vacío', 'skipped': True}
-        
-        # Dividir en statements individuales (separados por ;)
-        statements = [s.strip() for s in sql_content.split(';') 
-                     if s.strip() and not s.strip().startswith('--')]
-        
-        if not statements:
-            return {'success': False, 'error': 'No se encontraron statements SQL válidos', 'skipped': True}
-        
-        executed_count = 0
-        errors = []
-        output_lines = []
-        
-        for idx, statement in enumerate(statements, 1):
-            try:
-                cursor.execute(statement)
-                executed_count += 1
-                try:
-                    results = cursor.fetchall()
-                    if results:
-                        output_lines.append(f"Statement {idx}: {len(results)} filas afectadas")
-                except:
-                    output_lines.append(f"Statement {idx}: Ejecutado correctamente")
-            except Exception as e:
-                error_msg = f"Error en statement {idx}: {str(e)}"
-                errors.append(error_msg)
-                with open(error_log_path, 'a', encoding='utf-8') as err_file:
-                    err_file.write(f"{error_msg}\nStatement: {statement[:200]}...\n\n")
-        
-        conn.commit()
-        
-        with open(output_log_path, 'w', encoding='utf-8') as out_file:
-            out_file.write('\n'.join(output_lines))
-        
-        if errors:
-            return {
-                'success': False,
-                'error': f'{len(errors)} errores de {len(statements)} statements',
-                'executed': executed_count,
-                'total': len(statements)
-            }
-        
-        return {
-            'success': True,
-            'executed': executed_count,
-            'total': len(statements)
-        }
-        
-    except Exception as e:
-        with open(error_log_path, 'w', encoding='utf-8') as err_file:
-            err_file.write(f"Error fatal: {str(e)}\n")
-        return {'success': False, 'error': str(e)}
-    finally:
-        cursor.close()
+    # Si no hay hdbsql, retornar error
+    return {'success': False, 'error': 'hdbsql no está disponible'}
 
 
 def move_to_created(file_path, script_dir):
@@ -698,8 +424,6 @@ def main():
     
     print(f"{Colors.GREEN}✓ Usando hdbsql para ejecución: {hdbsql_path}{Colors.NC}\n")
     
-    # No necesitamos hdbcli si tenemos hdbsql
-    conn = None
     
     # Contadores
     total_files = len(sql_files)
@@ -713,7 +437,7 @@ def main():
         print(f"{Colors.YELLOW}[{idx}/{total_files}] Procesando: {filename}{Colors.NC}")
         
         start_time = time.time()
-        result = execute_sql_file(conn, sql_file, log_dir, config)
+        result = execute_sql_file(sql_file, log_dir, config)
         duration = int(time.time() - start_time)
         
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -747,10 +471,6 @@ def main():
         
         with open(execution_log, 'a', encoding='utf-8') as f:
             f.write(f"[{timestamp}] {filename} - {result.get('error', 'SUCCESS')} - {duration}s\n")
-    
-    # Cerrar conexión si existe
-    if conn:
-        conn.close()
     
     # Resumen final
     print()
