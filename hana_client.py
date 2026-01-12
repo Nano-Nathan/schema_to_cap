@@ -158,6 +158,74 @@ class HanaClient:
         
         return None
     
+    def get_table_records_paginated(self, schema: str, table_name: str, columns: List[str],
+                                    offset: int, limit: int, timeout: int = 300) -> List[Tuple[str, ...]]:
+        """
+        Obtiene registros de una tabla con paginación (OFFSET/LIMIT)
+        
+        Args:
+            schema: Nombre del schema
+            table_name: Nombre de la tabla
+            columns: Lista de nombres de columnas
+            offset: Número de registros a saltar
+            limit: Número máximo de registros a obtener
+            timeout: Timeout en segundos (por defecto 300)
+        
+        Returns:
+            List[Tuple]: Lista de tuplas con los registros
+        """
+        if not columns:
+            return []
+        
+        columns_str = ', '.join([f'"{col}"' for col in columns])
+        table_full_name = f'"{schema}"."{table_name}"'
+        query = f'SELECT {columns_str} FROM {table_full_name} LIMIT {limit} OFFSET {offset};'
+        
+        try:
+            returncode, stdout, stderr = self.execute_query(query, timeout=timeout)
+            
+            if returncode != 0:
+                stderr_lower = stderr.lower() if stderr else ''
+                if 'table' in stderr_lower and ('not found' in stderr_lower or 
+                                                'does not exist' in stderr_lower or 
+                                                'invalid table' in stderr_lower):
+                    return []
+                return []
+            
+            if not stdout:
+                return []
+            
+            # Parsear la salida de hdbsql usando CSV
+            csv_reader = csv.reader(StringIO(stdout))
+            records = []
+            header_skipped = False
+            
+            for row in csv_reader:
+                if not row:
+                    continue
+                
+                if not header_skipped:
+                    header_skipped = True
+                    continue
+                
+                row_str = ' '.join(row).lower()
+                if 'rows selected' in row_str or 'row selected' in row_str:
+                    continue
+                
+                while len(row) < len(columns):
+                    row.append('')
+                
+                values = row[:len(columns)]
+                normalized_row = tuple(
+                    str(val).strip().strip('"').strip("'") if val else '' 
+                    for val in values
+                )
+                records.append(normalized_row)
+            
+            return records
+        except Exception:
+            return []
+    
     def get_table_records(self, schema: str, table_name: str, columns: List[str], 
                          timeout: int = 300) -> List[Tuple[str, ...]]:
         """

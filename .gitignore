@@ -7,3 +7,4 @@ __pycache__/*
 hana_config.conf
 export.tar.gz
 hanaclient*.tar.gz
+error_logs/*
